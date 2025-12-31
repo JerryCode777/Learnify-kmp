@@ -1,0 +1,99 @@
+CREATE TABLE Document (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    uploadedAt INTEGER NOT NULL,
+    totalPages INTEGER NOT NULL
+);
+
+CREATE TABLE LearningPath (
+    id TEXT NOT NULL PRIMARY KEY,
+    documentId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    FOREIGN KEY (documentId) REFERENCES Document(id) ON DELETE CASCADE
+);
+
+CREATE TABLE Topic (
+    id TEXT NOT NULL PRIMARY KEY,
+    learningPathId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    pageNumbers TEXT NOT NULL,
+    topicOrder INTEGER NOT NULL,
+    FOREIGN KEY (learningPathId) REFERENCES LearningPath(id) ON DELETE CASCADE
+);
+
+CREATE TABLE Quiz (
+    id TEXT NOT NULL PRIMARY KEY,
+    topicId TEXT NOT NULL,
+    FOREIGN KEY (topicId) REFERENCES Topic(id) ON DELETE CASCADE
+);
+
+CREATE TABLE Question (
+    id TEXT NOT NULL PRIMARY KEY,
+    quizId TEXT NOT NULL,
+    text TEXT NOT NULL,
+    options TEXT NOT NULL,
+    correctAnswer INTEGER NOT NULL,
+    explanation TEXT NOT NULL,
+    FOREIGN KEY (quizId) REFERENCES Quiz(id) ON DELETE CASCADE
+);
+
+CREATE TABLE QuizResult (
+    id TEXT NOT NULL PRIMARY KEY,
+    quizId TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    totalQuestions INTEGER NOT NULL,
+    completedAt INTEGER NOT NULL,
+    FOREIGN KEY (quizId) REFERENCES Quiz(id) ON DELETE CASCADE
+);
+
+-- Queries
+getAllDocuments:
+SELECT * FROM Document ORDER BY uploadedAt DESC;
+
+getDocumentById:
+SELECT * FROM Document WHERE id = ?;
+
+insertDocument:
+INSERT INTO Document(id, title, content, uploadedAt, totalPages)
+VALUES (?, ?, ?, ?, ?);
+
+deleteDocument:
+DELETE FROM Document WHERE id = ?;
+
+getLearningPathByDocumentId:
+SELECT * FROM LearningPath WHERE documentId = ? LIMIT 1;
+
+getTopicsByLearningPathId:
+SELECT * FROM Topic WHERE learningPathId = ? ORDER BY topicOrder ASC;
+
+insertLearningPath:
+INSERT INTO LearningPath(id, documentId, title, createdAt)
+VALUES (?, ?, ?, ?);
+
+insertTopic:
+INSERT INTO Topic(id, learningPathId, title, content, pageNumbers, topicOrder)
+VALUES (?, ?, ?, ?, ?, ?);
+
+getQuizByTopicId:
+SELECT * FROM Quiz WHERE topicId = ? LIMIT 1;
+
+getQuestionsByQuizId:
+SELECT * FROM Question WHERE quizId = ? ORDER BY id ASC;
+
+insertQuiz:
+INSERT INTO Quiz(id, topicId)
+VALUES (?, ?);
+
+insertQuestion:
+INSERT INTO Question(id, quizId, text, options, correctAnswer, explanation)
+VALUES (?, ?, ?, ?, ?, ?);
+
+insertQuizResult:
+INSERT INTO QuizResult(id, quizId, score, totalQuestions, completedAt)
+VALUES (?, ?, ?, ?, ?);
+
+getQuizResultsByQuizId:
+SELECT * FROM QuizResult WHERE quizId = ? ORDER BY completedAt DESC;
