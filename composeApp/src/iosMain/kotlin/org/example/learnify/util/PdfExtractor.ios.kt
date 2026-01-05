@@ -20,17 +20,28 @@ class IosPdfExtractor : PdfExtractor {
 
     override suspend fun extractText(fileUri: String): Result<PdfExtractionResult> = withContext(Dispatchers.IO) {
         try {
-            val url = NSURL.URLWithString(fileUri)
-                ?: return@withContext Result.failure(Exception("URL inválida: $fileUri"))
+            Napier.d("Iniciando extracción de PDF desde: $fileUri")
+
+            // Para rutas de archivo, usar fileURLWithPath en lugar de URLWithString
+            val url = NSURL.fileURLWithPath(fileUri)
+
+            Napier.d("URL creada: ${url.absoluteString}")
 
             val pdfDocument = PDFDocument(url)
-                ?: return@withContext Result.failure(Exception("No se pudo cargar el PDF desde: $fileUri"))
+            if (pdfDocument == null) {
+                Napier.e("No se pudo cargar el PDF desde: $fileUri")
+                return@withContext Result.failure(Exception("No se pudo cargar el PDF. Verifica que el archivo existe y es un PDF válido."))
+            }
+
+            Napier.i("PDF cargado exitosamente, ${pdfDocument.pageCount} páginas")
 
             val result = extractFromPdfDocument(pdfDocument)
+            Napier.i("Extracción completada: ${result.totalPages} páginas, ${result.text.length} caracteres")
+
             Result.success(result)
         } catch (e: Exception) {
             Napier.e("Error extrayendo texto del PDF en iOS", e)
-            Result.failure(e)
+            Result.failure(Exception("Error al procesar el PDF: ${e.message}", e))
         }
     }
 
@@ -61,7 +72,14 @@ class IosPdfExtractor : PdfExtractor {
         val pages = mutableListOf<PageContent>()
         val fullTextBuilder = StringBuilder()
 
+        Napier.d("Extrayendo texto de $totalPages páginas...")
+
         for (pageIndex in 0 until totalPages) {
+            // Log cada 50 páginas para documentos grandes
+            if (pageIndex % 50 == 0) {
+                Napier.d("Procesando página ${pageIndex + 1} de $totalPages")
+            }
+
             val page = pdfDocument.pageAtIndex(pageIndex.toULong())
             val pageText = page?.string ?: ""
 
@@ -74,6 +92,8 @@ class IosPdfExtractor : PdfExtractor {
             fullTextBuilder.append(pageText)
             fullTextBuilder.append("\n\n")
         }
+
+        Napier.i("Extracción de texto completada: $totalPages páginas, ${fullTextBuilder.length} caracteres totales")
 
         return PdfExtractionResult(
             text = fullTextBuilder.toString().trim(),

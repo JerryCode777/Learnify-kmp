@@ -3,7 +3,7 @@ package org.example.learnify.presentation.upload
 import androidx.compose.runtime.*
 import io.github.aakira.napier.Napier
 import org.example.learnify.domain.model.LearningPath
-import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
 
 /**
  * Versión integrada del UploadScreen que maneja automáticamente
@@ -14,7 +14,7 @@ fun UploadScreenIntegrated(
     onFilePickerRequest: (onFileSelected: (String) -> Unit) -> Unit,
     onContinue: (LearningPath) -> Unit
 ) {
-    val viewModel = koinViewModel<UploadViewModel>()
+    val viewModel = koinInject<UploadViewModel>()
     val uiState by viewModel.uiState.collectAsState()
 
     // Callback cuando se selecciona un archivo

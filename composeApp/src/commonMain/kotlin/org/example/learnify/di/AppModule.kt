@@ -3,11 +3,13 @@ package org.example.learnify.di
 import org.example.learnify.BuildKonfig
 import org.example.learnify.data.remote.GeminiApiClient
 import org.example.learnify.domain.usecase.ExtractPdfContentUseCase
+import org.example.learnify.domain.usecase.ExtractPdfToJsonUseCase
 import org.example.learnify.domain.usecase.GenerateLearningPathUseCase
 import org.example.learnify.domain.usecase.GenerateQuizUseCase
+import org.example.learnify.domain.usecase.ProcessDocumentInChunksUseCase
 import org.example.learnify.presentation.learning_path.LearningPathViewModel
+import org.example.learnify.presentation.quiz.QuizViewModel
 import org.example.learnify.presentation.upload.UploadViewModel
-import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
 val appModule = module {
@@ -22,9 +24,14 @@ val appModule = module {
     single { GenerateLearningPathUseCase(get()) }
     single { GenerateQuizUseCase(get()) }
 
-    // ViewModels
-    viewModelOf(::UploadViewModel)
-    viewModelOf(::LearningPathViewModel)
+    // New Use Cases for chunked processing
+    single { ExtractPdfToJsonUseCase(get()) }
+    single { ProcessDocumentInChunksUseCase(get()) }
+
+    // ViewModels - Using factory instead of viewModelOf to avoid iOS crash with SavedStateHandle
+    factory { UploadViewModel(get(), get(), get()) }
+    factory { LearningPathViewModel() }
+    factory { QuizViewModel(get()) }
 
     // TODO: Add Database instance
     // TODO: Add Repositories

@@ -16,13 +16,13 @@ class GenerateQuizUseCase(
      *
      * @param topicId ID del tema
      * @param topicContent Contenido del tema
-     * @param questionCount Número de preguntas a generar
+     * @param questionCount Número de preguntas a generar (por defecto 8)
      * @return Result con el quiz generado
      */
     suspend operator fun invoke(
         topicId: String,
         topicContent: String,
-        questionCount: Int = 5
+        questionCount: Int = 8
     ): Result<Quiz> {
         Napier.d("Generando quiz para tema: $topicId con $questionCount preguntas")
 

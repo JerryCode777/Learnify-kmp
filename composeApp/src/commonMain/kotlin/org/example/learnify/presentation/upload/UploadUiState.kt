@@ -9,6 +9,12 @@ sealed interface UploadUiState {
     data object ExtractingContent : UploadUiState
     data class Success(val result: PdfExtractionResult) : UploadUiState
     data object GeneratingLearningPath : UploadUiState
+    data class ProcessingChunks(
+        val currentChunk: Int,
+        val totalChunks: Int,
+        val message: String,
+        val percentage: Float
+    ) : UploadUiState
     data class LearningPathGenerated(val learningPath: LearningPath) : UploadUiState
     data class Error(val message: String) : UploadUiState
 }

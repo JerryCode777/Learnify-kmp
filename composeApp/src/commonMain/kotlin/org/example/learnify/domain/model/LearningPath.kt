@@ -7,6 +7,7 @@ data class LearningPath(
     val id: String,
     val documentId: String,
     val title: String,
+    val description: String = "",
     val topics: List<Topic>,
     val createdAt: Long
 )

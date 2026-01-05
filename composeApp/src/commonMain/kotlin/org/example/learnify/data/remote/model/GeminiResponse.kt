@@ -4,8 +4,16 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GeminiResponse(
-    val candidates: List<Candidate>,
-    val usageMetadata: UsageMetadata? = null
+    val candidates: List<Candidate>? = null,
+    val usageMetadata: UsageMetadata? = null,
+    val error: GeminiError? = null
+)
+
+@Serializable
+data class GeminiError(
+    val code: Int? = null,
+    val message: String,
+    val status: String? = null
 )
 
 @Serializable

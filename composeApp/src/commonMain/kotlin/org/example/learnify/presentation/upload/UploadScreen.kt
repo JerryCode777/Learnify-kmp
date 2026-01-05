@@ -74,7 +74,16 @@ fun UploadScreen(
                 }
 
                 is UploadUiState.GeneratingLearningPath -> {
-                    LoadingContent(message = "Generando ruta de aprendizaje con IA...")
+                    LoadingContent(message = "Preparando procesamiento por chunks...")
+                }
+
+                is UploadUiState.ProcessingChunks -> {
+                    ProcessingChunksContent(
+                        currentChunk = state.currentChunk,
+                        totalChunks = state.totalChunks,
+                        message = state.message,
+                        percentage = state.percentage
+                    )
                 }
 
                 is UploadUiState.LearningPathGenerated -> {
@@ -447,6 +456,110 @@ private fun ErrorContent(
                 .height(56.dp)
         ) {
             Text("Intentar de Nuevo")
+        }
+    }
+}
+
+@Composable
+private fun ProcessingChunksContent(
+    currentChunk: Int,
+    totalChunks: Int,
+    message: String,
+    percentage: Float,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Animación de progreso circular
+        Box(
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(
+                progress = { percentage },
+                modifier = Modifier.size(120.dp),
+                strokeWidth = 8.dp
+            )
+
+            Text(
+                text = "${(percentage * 100).toInt()}%",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Título principal
+        Text(
+            text = "Procesando Documento",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Información de chunks
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Chunk $currentChunk de $totalChunks",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LinearProgressIndicator(
+                    progress = { percentage },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Mensaje informativo
+        Text(
+            text = "Estamos analizando cada sección de tu documento con IA para crear una ruta de aprendizaje exhaustiva. Este proceso puede tomar varios minutos.",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Estimación de tiempo (opcional)
+        if (totalChunks > 0 && currentChunk > 0) {
+            val estimatedTimeRemaining = ((totalChunks - currentChunk) * 30) // ~30 segundos por chunk
+            if (estimatedTimeRemaining > 0) {
+                Text(
+                    text = "Tiempo estimado restante: ~${estimatedTimeRemaining / 60} min",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }

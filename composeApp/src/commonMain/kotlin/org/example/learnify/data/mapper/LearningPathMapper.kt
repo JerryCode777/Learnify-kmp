@@ -12,6 +12,7 @@ fun LearningPathResponse.toDomain(documentId: String): LearningPath {
         id = uuid4().toString(),
         documentId = documentId,
         title = this.title,
+        description = this.description,
         topics = this.topics.mapIndexed { index, topicResponse ->
             topicResponse.toDomain(index)
         },
