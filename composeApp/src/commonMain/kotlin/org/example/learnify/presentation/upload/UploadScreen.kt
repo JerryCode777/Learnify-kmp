@@ -65,6 +65,14 @@ fun UploadScreen(
                     LoadingContent(message = "Procesando documento...")
                 }
 
+                is UploadUiState.ExtractingPages -> {
+                    ExtractingPagesContent(
+                        currentPage = state.currentPage,
+                        totalPages = state.totalPages,
+                        percentage = state.percentage
+                    )
+                }
+
                 is UploadUiState.Success -> {
                     SuccessContent(
                         result = state.result,
@@ -457,6 +465,95 @@ private fun ErrorContent(
         ) {
             Text("Intentar de Nuevo")
         }
+    }
+}
+
+@Composable
+private fun ExtractingPagesContent(
+    currentPage: Int,
+    totalPages: Int,
+    percentage: Float,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Animación de progreso circular
+        Box(
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(
+                progress = { percentage },
+                modifier = Modifier.size(120.dp),
+                strokeWidth = 8.dp
+            )
+
+            Text(
+                text = "${(percentage * 100).toInt()}%",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Título principal
+        Text(
+            text = "Extrayendo Contenido",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Información de páginas
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Página $currentPage de $totalPages",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LinearProgressIndicator(
+                    progress = { percentage },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Procesando en lotes para optimizar memoria",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Mensaje informativo
+        Text(
+            text = "Estamos extrayendo el texto de tu PDF página por página. Esto puede tomar unos minutos para documentos grandes.",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
     }
 }
 

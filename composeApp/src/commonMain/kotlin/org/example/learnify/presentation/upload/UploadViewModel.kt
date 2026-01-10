@@ -28,36 +28,58 @@ class UploadViewModel(
 
     fun onFileSelected(fileUri: String) {
         viewModelScope.launch {
-            _uiState.value = UploadUiState.ExtractingContent
-            Napier.d("Iniciando extracción COMPLETA del archivo: $fileUri")
+            try {
+                _uiState.value = UploadUiState.ExtractingContent
+                Napier.d("Iniciando extracción INCREMENTAL del archivo: $fileUri")
 
-            // Extraer el nombre del archivo de la URI
-            currentFilename = fileUri.substringAfterLast("/").removeSuffix(".pdf") + ".pdf"
+                // Extraer el nombre del archivo de la URI
+                currentFilename = fileUri.substringAfterLast("/").removeSuffix(".pdf") + ".pdf"
+                Napier.d("Nombre del archivo: $currentFilename")
 
-            // PASO 1: Extracción completa a JSON
-            val extractionResult = extractPdfToJsonUseCase(fileUri, currentFilename)
-
-            extractionResult.onSuccess { documentJson ->
-                Napier.i("Extracción completa exitosa: ${documentJson.metadata.totalPages} páginas, ${documentJson.metadata.totalCharacters} caracteres")
-                currentDocumentJson = documentJson
-
-                // Crear PdfExtractionResult para compatibilidad con UI
-                val extraction = org.example.learnify.domain.model.PdfExtractionResult(
-                    text = documentJson.pages.joinToString("\n\n") { it.content },
-                    totalPages = documentJson.metadata.totalPages,
-                    pages = documentJson.pages.map { pageJson ->
-                        org.example.learnify.domain.model.PageContent(
-                            pageNumber = pageJson.pageNumber,
-                            text = pageJson.content
+                // PASO 1: Extracción incremental a JSON con progreso
+                Napier.d("Llamando a extractPdfToJsonUseCase con progreso...")
+                val extractionResult = extractPdfToJsonUseCase(
+                    fileUri = fileUri,
+                    filename = currentFilename,
+                    onProgress = { currentPage, totalPages ->
+                        val percentage = currentPage.toFloat() / totalPages.toFloat()
+                        Napier.i("Extrayendo: $currentPage/$totalPages páginas (${(percentage * 100).toInt()}%)")
+                        _uiState.value = UploadUiState.ExtractingPages(
+                            currentPage = currentPage,
+                            totalPages = totalPages,
+                            percentage = percentage
                         )
                     }
                 )
 
-                _uiState.value = UploadUiState.Success(extraction)
-            }.onFailure { error ->
-                Napier.e("Error en extracción", error)
+                extractionResult.onSuccess { documentJson ->
+                    Napier.i("Extracción completa exitosa: ${documentJson.metadata.totalPages} páginas, ${documentJson.metadata.totalCharacters} caracteres")
+                    currentDocumentJson = documentJson
+
+                    // Crear PdfExtractionResult para compatibilidad con UI
+                    val extraction = org.example.learnify.domain.model.PdfExtractionResult(
+                        text = documentJson.pages.joinToString("\n\n") { it.content },
+                        totalPages = documentJson.metadata.totalPages,
+                        pages = documentJson.pages.map { pageJson ->
+                            org.example.learnify.domain.model.PageContent(
+                                pageNumber = pageJson.pageNumber,
+                                text = pageJson.content
+                            )
+                        }
+                    )
+
+                    Napier.d("Actualizando UI a Success")
+                    _uiState.value = UploadUiState.Success(extraction)
+                }.onFailure { error ->
+                    Napier.e("Error en extracción", error)
+                    _uiState.value = UploadUiState.Error(
+                        error.message ?: "Error desconocido al procesar el PDF"
+                    )
+                }
+            } catch (e: Exception) {
+                Napier.e("Exception no capturada en onFileSelected", e)
                 _uiState.value = UploadUiState.Error(
-                    error.message ?: "Error desconocido al procesar el PDF"
+                    "Error inesperado: ${e.message}"
                 )
             }
         }

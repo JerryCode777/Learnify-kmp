@@ -47,6 +47,27 @@ class AndroidPdfExtractorWithTextExtraction(private val context: Context) : PdfE
         }
     }
 
+    override suspend fun extractTextWithProgress(
+        fileUri: String,
+        batchSize: Int,
+        onProgress: (currentPage: Int, totalPages: Int, batch: List<PageContent>) -> Unit
+    ): Result<PdfExtractionResult> = withContext(Dispatchers.IO) {
+        // Placeholder implementation - delegates to extractText for now
+        // TODO: Implement incremental extraction with PDFBox when available
+        try {
+            Napier.d("AndroidPdfExtractorWithTextExtraction: Usando extractText (sin PDFBox aún)")
+            val result = extractText(fileUri).getOrThrow()
+
+            // Simular progreso reportando todo al final
+            onProgress(result.totalPages, result.totalPages, result.pages)
+
+            Result.success(result)
+        } catch (e: Exception) {
+            Napier.e("Error en extracción incremental", e)
+            Result.failure(e)
+        }
+    }
+
     private fun extractFromInputStream(inputStream: InputStream): PdfExtractionResult {
         // TODO: Implementar con PDFBox cuando se agregue la dependencia
         // Por ahora, versión simplificada

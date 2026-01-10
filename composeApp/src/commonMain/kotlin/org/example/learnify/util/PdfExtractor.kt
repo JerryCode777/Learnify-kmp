@@ -1,5 +1,6 @@
 package org.example.learnify.util
 
+import org.example.learnify.domain.model.PageContent
 import org.example.learnify.domain.model.PdfExtractionResult
 
 /**
@@ -20,6 +21,19 @@ interface PdfExtractor {
      * @return Resultado con el texto extraído y metadatos
      */
     suspend fun extractTextFromBytes(pdfBytes: ByteArray): Result<PdfExtractionResult>
+
+    /**
+     * Extrae páginas de forma incremental con progreso
+     * @param fileUri URI del archivo PDF
+     * @param batchSize Número de páginas a procesar por lote (default 20)
+     * @param onProgress Callback para reportar progreso (páginas procesadas, total de páginas, páginas en el lote actual)
+     * @return Resultado con el texto extraído y metadatos
+     */
+    suspend fun extractTextWithProgress(
+        fileUri: String,
+        batchSize: Int = 20,
+        onProgress: (currentPage: Int, totalPages: Int, batch: List<PageContent>) -> Unit
+    ): Result<PdfExtractionResult>
 }
 
 /**

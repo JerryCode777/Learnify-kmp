@@ -7,6 +7,11 @@ sealed interface UploadUiState {
     data object Idle : UploadUiState
     data object SelectingFile : UploadUiState
     data object ExtractingContent : UploadUiState
+    data class ExtractingPages(
+        val currentPage: Int,
+        val totalPages: Int,
+        val percentage: Float
+    ) : UploadUiState
     data class Success(val result: PdfExtractionResult) : UploadUiState
     data object GeneratingLearningPath : UploadUiState
     data class ProcessingChunks(

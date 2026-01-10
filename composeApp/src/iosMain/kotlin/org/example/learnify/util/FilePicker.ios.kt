@@ -43,8 +43,19 @@ class IosFilePicker : FilePicker {
                     val selectedUrl = urls?.firstOrNull()
 
                     if (selectedUrl != null) {
-                        Napier.d("Archivo seleccionado: ${selectedUrl.path}")
-                        cont.resume(selectedUrl.path)
+                        // Acceder al recurso con scope de seguridad
+                        val hasAccess = selectedUrl.startAccessingSecurityScopedResource()
+
+                        Napier.d("Archivo seleccionado - Path: ${selectedUrl.path}")
+                        Napier.d("Archivo seleccionado - Absolute String: ${selectedUrl.absoluteString}")
+                        Napier.d("Security scoped access: $hasAccess")
+
+                        // Retornar la ruta absoluta (sin el esquema file://)
+                        val filePath = selectedUrl.path ?: selectedUrl.absoluteString
+                        cont.resume(filePath)
+
+                        // IMPORTANTE: NO llamar stopAccessingSecurityScopedResource aquí
+                        // porque necesitamos acceso durante la lectura del PDF
                     } else {
                         Napier.w("No se seleccionó ningún archivo")
                         cont.resume(null)

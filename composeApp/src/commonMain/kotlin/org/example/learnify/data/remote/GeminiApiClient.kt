@@ -91,7 +91,7 @@ class GeminiApiClient(
         }
     }
 
-    private suspend fun generateContent(prompt: String): GeminiResponse {
+    private suspend fun generateContent(prompt: String, retryCount: Int = 0): GeminiResponse {
         val request = GeminiRequest(
             contents = listOf(
                 Content(
@@ -116,16 +116,38 @@ class GeminiApiClient(
             // Verificar el código de estado HTTP
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
+
+                // Manejo específico para error 429 (Too Many Requests)
+                if (response.status.value == 429) {
+                    if (retryCount < 3) {
+                        // Backoff exponencial más agresivo: 30s, 60s, 120s
+                        val delaySeconds = 30 * (1 shl retryCount) // 30, 60, 120
+                        Napier.w("⚠️ HTTP 429 (Rate Limit). Reintento ${retryCount + 1}/3 en ${delaySeconds}s...")
+                        Napier.w("   La API de Gemini tiene límites muy estrictos. Por favor ten paciencia...")
+                        kotlinx.coroutines.delay(delaySeconds * 1000L)
+                        return generateContent(prompt, retryCount + 1)
+                    } else {
+                        Napier.e("❌ HTTP 429: Rate limit excedido después de 3 reintentos (total: ${30 + 60 + 120}s esperados)")
+                        throw RateLimitException("HTTP 429: Too Many Requests - La API de Gemini tiene límites muy estrictos. Por favor espera 5-10 minutos antes de intentar nuevamente.")
+                    }
+                }
+
                 Napier.e("HTTP error ${response.status.value}: $errorBody")
                 throw IllegalStateException("HTTP ${response.status.value}: ${response.status.description}")
             }
 
             return response.body()
+        } catch (e: RateLimitException) {
+            // Re-lanzar RateLimitException sin envolver
+            throw e
         } catch (e: Exception) {
             Napier.e("Error calling Gemini API", e)
             throw e
         }
     }
+
+    // Excepción personalizada para rate limiting
+    class RateLimitException(message: String) : Exception(message)
 
     private inline fun <reified T> parseResponse(response: GeminiResponse): T {
         // Verificar si hay un error en la respuesta

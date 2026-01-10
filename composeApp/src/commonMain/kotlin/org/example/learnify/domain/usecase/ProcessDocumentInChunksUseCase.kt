@@ -12,13 +12,14 @@ class ProcessDocumentInChunksUseCase(
     private val geminiApiClient: GeminiApiClient
 ) {
     companion object {
-        // Páginas por chunk - cada 20 páginas se procesa un chunk
-        // Reducido de 25 a 20 para evitar exceder límites de tokens de Gemini
-        private const val PAGES_PER_CHUNK = 20
+        // Páginas por chunk - cada 15 páginas se procesa un chunk
+        // Reducido de 20 a 15 para hacer requests más pequeñas y rápidas
+        private const val PAGES_PER_CHUNK = 15
 
         // Delay entre peticiones para evitar rate limiting (en milisegundos)
-        // Gemini Pro: límite de requests por minuto → delay de 5 segundos = ~12 requests/minuto
-        private const val DELAY_BETWEEN_CHUNKS_MS = 5000L
+        // Gemini API Free Tier: límite MUY estricto → delay de 60 segundos = 1 request/minuto
+        // CRÍTICO: La API gratuita tiene límites extremadamente bajos
+        private const val DELAY_BETWEEN_CHUNKS_MS = 60000L
 
         // Palabras clave para detectar páginas irrelevantes (bibliografía, índices, etc.)
         private val IRRELEVANT_PAGE_KEYWORDS = listOf(
@@ -56,11 +57,14 @@ class ProcessDocumentInChunksUseCase(
             chunks.forEachIndexed { index, chunk ->
                 // Agregar delay entre chunks para evitar rate limiting (excepto el primero)
                 if (index > 0) {
-                    Napier.d("⏱️ Esperando ${DELAY_BETWEEN_CHUNKS_MS / 1000}s antes del siguiente chunk (evitar rate limit)...")
+                    val delaySeconds = DELAY_BETWEEN_CHUNKS_MS / 1000
+                    val waitMessage = "Esperando ${delaySeconds}s (evitar rate limit de API)..."
+                    onProgress(index, chunks.size, waitMessage)
+                    Napier.d("⏱️ $waitMessage")
                     kotlinx.coroutines.delay(DELAY_BETWEEN_CHUNKS_MS)
                 }
 
-                val progress = "Procesando chunk ${index + 1} de ${chunks.size} (páginas ${chunk.startPage}-${chunk.endPage})"
+                val progress = "Procesando chunk ${index + 1} de ${chunks.size} (págs ${chunk.startPage}-${chunk.endPage})"
                 onProgress(index + 1, chunks.size, progress)
                 Napier.i(progress)
 

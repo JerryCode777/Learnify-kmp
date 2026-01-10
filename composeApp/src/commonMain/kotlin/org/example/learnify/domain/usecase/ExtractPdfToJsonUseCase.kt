@@ -13,13 +13,26 @@ class ExtractPdfToJsonUseCase(
 ) {
     suspend operator fun invoke(
         fileUri: String,
-        filename: String
+        filename: String,
+        onProgress: ((currentPage: Int, totalPages: Int) -> Unit)? = null
     ): Result<DocumentJson> {
         return try {
-            Napier.i("Iniciando extracción completa a JSON: $filename")
+            Napier.i("Iniciando extracción ${if (onProgress != null) "INCREMENTAL" else "completa"} a JSON: $filename")
 
             // Extraer todo el contenido del PDF
-            val extraction = pdfExtractor.extractText(fileUri).getOrThrow()
+            val extraction = if (onProgress != null) {
+                // Extracción incremental con progreso
+                pdfExtractor.extractTextWithProgress(
+                    fileUri = fileUri,
+                    batchSize = 20,
+                    onProgress = { current, total, _ ->
+                        onProgress(current, total)
+                    }
+                ).getOrThrow()
+            } else {
+                // Extracción completa sin progreso
+                pdfExtractor.extractText(fileUri).getOrThrow()
+            }
 
             Napier.i("Extracción completada: ${extraction.totalPages} páginas, ${extraction.text.length} caracteres")
 
