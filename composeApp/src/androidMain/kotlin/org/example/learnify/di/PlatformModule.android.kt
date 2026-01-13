@@ -15,6 +15,8 @@ class AndroidFilePickerPlaceholder(private val context: Context) : FilePicker {
         // El flujo real usa el callback onFilePickerRequest
         return null
     }
+
+    override val supportsDirectPicker: Boolean = false
 }
 
 actual val platformModule = module {

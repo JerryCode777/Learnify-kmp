@@ -27,7 +27,9 @@ data class DocumentMetadata(
     val totalCharacters: Int,
     val totalWords: Int,
     val extractedAt: Long,
-    val processingMethod: String = "PDFKit/PdfRenderer"
+    val processingMethod: String = "PDFKit/PdfRenderer",
+    val wasTruncated: Boolean = false,
+    val originalTotalPages: Int? = null
 )
 
 /**

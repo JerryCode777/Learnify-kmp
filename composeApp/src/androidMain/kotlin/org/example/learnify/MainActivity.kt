@@ -11,11 +11,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import io.github.aakira.napier.DebugAntilog
 import io.github.aakira.napier.Napier
 import org.example.learnify.presentation.upload.UploadViewModel
+import org.example.learnify.util.LearningPathStorage
 import org.koin.compose.viewmodel.koinViewModel
 
 class MainActivity : ComponentActivity() {
 
     private var fileSelectedCallback: ((String) -> Unit)? = null
+    private var fileSelectionCanceledCallback: (() -> Unit)? = null
+    private lateinit var storage: LearningPathStorage
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -33,6 +36,9 @@ class MainActivity : ComponentActivity() {
 
             Napier.d("File selected: $selectedUri")
             fileSelectedCallback?.invoke(selectedUri.toString())
+        } ?: run {
+            Napier.d("File picker cancelado por el usuario")
+            fileSelectionCanceledCallback?.invoke()
         }
     }
 
@@ -42,6 +48,9 @@ class MainActivity : ComponentActivity() {
 
         // Configurar Napier para logging
         Napier.base(DebugAntilog())
+
+        // Inicializar storage
+        storage = LearningPathStorage(applicationContext)
 
         setContent {
             val uploadViewModel = koinViewModel<UploadViewModel>()
@@ -55,13 +64,45 @@ class MainActivity : ComponentActivity() {
                     fileSelectedCallback = { uri ->
                         uploadViewModel.onFileSelected(uri)
                     }
+                    fileSelectionCanceledCallback = {
+                        uploadViewModel.onFileSelectionCanceled()
+                    }
                     filePickerLauncher.launch(arrayOf("application/pdf"))
                 }
+            }
+
+            // Verificar si es la primera vez que abre la app
+            val isFirstLaunch = storage.isFirstLaunch()
+
+            // Cargar Learning Paths guardados al iniciar
+            val savedLearningPaths = storage.loadAllLearningPaths()
+
+            Napier.i("🚀 MainActivity iniciada con ${savedLearningPaths.size} Learning Paths")
+            Napier.i("🔍 isFirstLaunch = $isFirstLaunch")
+
+            if (isFirstLaunch) {
+                Napier.i("👋 Primera vez - mostrando Welcome Screen")
+            } else {
+                Napier.i("🏠 Ya vio el Welcome - yendo directo a Dashboard")
             }
 
             App(
                 onFilePickerRequest = {
                     Napier.d("File picker request from App")
+                },
+                savedLearningPaths = savedLearningPaths,
+                onSaveLearningPath = { learningPath ->
+                    Napier.i("💾 Guardando Learning Path: ${learningPath.title}")
+                    storage.saveLearningPath(learningPath)
+                },
+                onDeleteLearningPath = { learningPath ->
+                    Napier.i("🗑️ Eliminando Learning Path: ${learningPath.title}")
+                    storage.deleteLearningPath(learningPath.id)
+                },
+                isFirstLaunch = isFirstLaunch,
+                onWelcomeCompleted = {
+                    Napier.i("✅ Usuario completó el Welcome - guardando preferencia")
+                    storage.markWelcomeAsSeen()
                 }
             )
         }

@@ -3,6 +3,7 @@ package org.example.learnify.data.remote
 import io.github.aakira.napier.Napier
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
@@ -27,6 +28,12 @@ class GeminiApiClient(
             json(json)
         }
 
+        install(HttpTimeout) {
+            requestTimeoutMillis = 60_000  // 60 segundos (reducido de 120s)
+            connectTimeoutMillis = 15_000  // 15 segundos (reducido de 30s)
+            socketTimeoutMillis = 60_000   // 60 segundos (reducido de 120s)
+        }
+
         install(Logging) {
             logger = object : Logger {
                 override fun log(message: String) {
@@ -39,8 +46,9 @@ class GeminiApiClient(
 
     private companion object {
         const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-        // Usando Gemini 2.5 Pro - mayor capacidad y límites más altos
-        const val MODEL = "gemini-2.5-pro"
+        // Usando Gemini 2.5 Flash (Pro agotó su cuota)
+        // Flash es más rápido y tiene cuota disponible
+        const val MODEL = "gemini-2.5-flash"
     }
 
     suspend fun generateLearningPath(documentContent: String): Result<LearningPathResponse> {
@@ -119,29 +127,54 @@ class GeminiApiClient(
 
                 // Manejo específico para error 429 (Too Many Requests)
                 if (response.status.value == 429) {
+                    // Verificar si es cuota excedida (no reintentable) o rate limit temporal
+                    if (errorBody.contains("quota", ignoreCase = true) ||
+                        errorBody.contains("exceeded your current quota", ignoreCase = true)) {
+                        Napier.e("❌ HTTP 429: Cuota diaria de Gemini API excedida")
+                        throw RateLimitException(
+                            """Cuota de Gemini API excedida.
+                            |
+                            |Tu cuenta ha alcanzado el límite diario de peticiones.
+                            |Por favor espera hasta que se restablezca tu cuota (generalmente 24 horas)
+                            |o verifica tu plan en: https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas
+                            """.trimMargin()
+                        )
+                    }
+
                     if (retryCount < 3) {
-                        // Backoff exponencial más agresivo: 30s, 60s, 120s
-                        val delaySeconds = 30 * (1 shl retryCount) // 30, 60, 120
+                        // Backoff exponencial: 10s, 20s, 40s
+                        val delaySeconds = 10 * (1 shl retryCount)
                         Napier.w("⚠️ HTTP 429 (Rate Limit). Reintento ${retryCount + 1}/3 en ${delaySeconds}s...")
-                        Napier.w("   La API de Gemini tiene límites muy estrictos. Por favor ten paciencia...")
                         kotlinx.coroutines.delay(delaySeconds * 1000L)
                         return generateContent(prompt, retryCount + 1)
                     } else {
-                        Napier.e("❌ HTTP 429: Rate limit excedido después de 3 reintentos (total: ${30 + 60 + 120}s esperados)")
-                        throw RateLimitException("HTTP 429: Too Many Requests - La API de Gemini tiene límites muy estrictos. Por favor espera 5-10 minutos antes de intentar nuevamente.")
+                        Napier.e("❌ HTTP 429: Rate limit excedido después de 3 reintentos")
+                        throw RateLimitException("Límite de peticiones excedido. Por favor espera unos minutos e intenta nuevamente.")
                     }
                 }
 
                 Napier.e("HTTP error ${response.status.value}: $errorBody")
-                throw IllegalStateException("HTTP ${response.status.value}: ${response.status.description}")
+                throw IllegalStateException("HTTP ${response.status.value}: ${response.status.description}\n$errorBody")
             }
 
             return response.body()
         } catch (e: RateLimitException) {
             // Re-lanzar RateLimitException sin envolver
             throw e
+        } catch (e: io.ktor.client.plugins.HttpRequestTimeoutException) {
+            val errorMsg = "La petición a Gemini tardó demasiado tiempo (>60s). Verifica tu conexión a internet o intenta más tarde."
+            Napier.e(errorMsg, e)
+            throw IllegalStateException(errorMsg, e)
+        } catch (e: io.ktor.client.network.sockets.ConnectTimeoutException) {
+            val errorMsg = "No se pudo conectar a la API de Gemini. Verifica tu conexión a internet."
+            Napier.e(errorMsg, e)
+            throw IllegalStateException(errorMsg, e)
+        } catch (e: io.ktor.client.network.sockets.SocketTimeoutException) {
+            val errorMsg = "Timeout de conexión con Gemini API. La API podría estar experimentando problemas."
+            Napier.e(errorMsg, e)
+            throw IllegalStateException(errorMsg, e)
         } catch (e: Exception) {
-            Napier.e("Error calling Gemini API", e)
+            Napier.e("Error calling Gemini API: ${e::class.simpleName} - ${e.message}", e)
             throw e
         }
     }
@@ -197,123 +230,123 @@ class GeminiApiClient(
         Napier.i("Generando ruta de aprendizaje: ${trimmedContent.length} caracteres, ~$recommendedTopics temas recomendados")
 
         return """
-Analiza el siguiente contenido educativo y crea una ruta de aprendizaje COMPLETA y EXHAUSTIVA.
+Analyze the following educational content and create a learning path in the form of a QUALITY SUMMARY.
 
-CONTENIDO (${trimmedContent.length} caracteres):
+CONTENT (${trimmedContent.length} characters):
 $trimmedContent
 
-INSTRUCCIONES CRÍTICAS:
-1. Este es un documento extenso. Debes crear una ruta de aprendizaje EXHAUSTIVA con al menos $recommendedTopics temas principales.
+CRITICAL INSTRUCTIONS:
+1. This is an extensive document. You must create a SUMMARIZED learning path with at least $recommendedTopics main topics.
 
-2. Identifica TODOS los conceptos, capítulos y secciones importantes del contenido.
+2. Identify ALL important concepts, chapters and sections of the content.
 
-3. Para cada tema, proporciona:
-   - Un título claro y descriptivo que refleje el contenido específico
-   - Una descripción breve del tema (1-2 oraciones)
-   - Contenido educativo DETALLADO con teoría, conceptos y explicaciones completas (mínimo 200 palabras por tema)
-   - 4-6 puntos clave que el estudiante debe dominar
-   - Tiempo estimado de estudio en minutos (realista según la complejidad)
+3. For each topic, provide:
+   - A clear and descriptive title that reflects the specific content
+   - A brief description of the topic (1-2 sentences)
+   - Summarized educational content with theory, concepts and clear explanations (120-220 words per topic)
+   - 4-6 key points that the student should master
+   - Estimated study time in minutes (realistic according to complexity)
 
-4. La ruta debe ser PROGRESIVA: organiza los temas en orden lógico de aprendizaje, del más básico al más avanzado.
+4. The path should be PROGRESSIVE: organize topics in logical learning order, from basic to advanced.
 
-5. NO omitas contenido importante. Cubre todos los temas principales del documento.
+5. DO NOT omit important content. Cover all main topics of the document.
 
-6. Si el documento tiene secciones, capítulos o partes claramente definidas, respeta esa estructura.
+6. If the document has clearly defined sections, chapters or parts, respect that structure.
 
-FORMATO DE RESPUESTA (JSON):
+RESPONSE FORMAT (JSON):
 {
-  "title": "Título descriptivo de la ruta de aprendizaje",
-  "description": "Descripción completa de qué aprenderá el estudiante (2-3 oraciones)",
+  "title": "Descriptive title of the learning path",
+  "description": "Complete description of what the student will learn (2-3 sentences)",
   "topics": [
     {
-      "title": "Nombre específico del tema",
-      "description": "Descripción del alcance y objetivos del tema",
-      "content": "Contenido educativo DETALLADO con explicaciones completas, ejemplos y contexto (mínimo 200 palabras)",
-      "keyPoints": ["Punto clave 1", "Punto clave 2", "Punto clave 3", "Punto clave 4"],
+      "title": "Specific topic name",
+      "description": "Description of the topic scope and objectives",
+      "content": "DETAILED educational content with complete explanations, examples and context (minimum 200 words)",
+      "keyPoints": ["Key point 1", "Key point 2", "Key point 3", "Key point 4"],
       "estimatedMinutes": 45
     }
   ]
 }
 
-IMPORTANTE: Genera AL MENOS $recommendedTopics temas. Mientras más temas generes mejor, siempre que sean relevantes y bien desarrollados.
+IMPORTANT: Generate AT LEAST $recommendedTopics topics. Prioritize clarity and correct sequence.
 
-Responde SOLO con el JSON, sin texto adicional.
+Respond ONLY with JSON, no additional text.
         """.trimIndent()
     }
 
     private fun buildQuizPrompt(topicContent: String, questionCount: Int): String {
         return """
-Crea un quiz EXHAUSTIVO de $questionCount preguntas de opción múltiple basado en el siguiente contenido educativo:
+Create a COMPREHENSIVE quiz of $questionCount multiple choice questions based on the following educational content:
 
-CONTENIDO DEL TEMA:
+TOPIC CONTENT:
 $topicContent
 
-INSTRUCCIONES CRÍTICAS:
+CRITICAL INSTRUCTIONS:
 
-1. **COBERTURA COMPLETA**:
-   - Las $questionCount preguntas deben cubrir TODO el contenido del tema
-   - Distribuye las preguntas entre conceptos clave, definiciones, ejemplos y aplicaciones
-   - No te enfoques solo en un aspecto del tema
+1. **COMPLETE COVERAGE**:
+   - The $questionCount questions must cover ALL the topic content
+   - Distribute questions among key concepts, definitions, examples and applications
+   - Don't focus on just one aspect of the topic
 
-2. **TIPOS DE PREGUNTAS** (varía entre estos tipos):
-   - Definiciones y conceptos fundamentales
-   - Aplicación de conocimientos a situaciones prácticas
-   - Análisis de ejemplos específicos mencionados en el contenido
-   - Comparación entre conceptos relacionados
-   - Identificación de características o propiedades
-   - Causas, efectos y relaciones entre conceptos
+2. **QUESTION TYPES** (vary between these types):
+   - Definitions and fundamental concepts
+   - Application of knowledge to practical situations
+   - Analysis of specific examples mentioned in the content
+   - Comparison between related concepts
+   - Identification of characteristics or properties
+   - Causes, effects and relationships between concepts
 
-3. **CALIDAD DE LAS PREGUNTAS**:
-   - Preguntas claras, específicas y sin ambigüedad
-   - Basadas en información REAL del contenido (no inventes datos)
-   - Nivel de dificultad variado (fácil, medio, difícil)
-   - Cada pregunta debe evaluar comprensión real, no memorización superficial
+3. **QUESTION QUALITY**:
+   - Clear, specific and unambiguous questions
+   - Based on REAL information from the content (don't make up data)
+   - Varied difficulty level (easy, medium, hard)
+   - Each question should assess real understanding, not superficial memorization
 
-4. **OPCIONES DE RESPUESTA**:
-   - Exactamente 4 opciones por pregunta
-   - Todas las opciones deben ser plausibles y relacionadas con el tema
-   - La respuesta correcta debe estar claramente respaldada por el contenido
-   - Las opciones incorrectas deben ser errores comunes o conceptos relacionados
+4. **ANSWER OPTIONS**:
+   - Exactly 4 options per question
+   - All options should be plausible and related to the topic
+   - The correct answer should be clearly supported by the content
+   - Incorrect options should be common mistakes or related concepts
 
-5. **EXPLICACIONES**:
-   - Explica por qué la respuesta correcta es correcta (referencia al contenido)
-   - Si es posible, menciona por qué las otras opciones son incorrectas
-   - La explicación debe reforzar el aprendizaje
+5. **EXPLANATIONS**:
+   - Explain why the correct answer is correct (reference to content)
+   - If possible, mention why the other options are incorrect
+   - The explanation should reinforce learning
 
-FORMATO DE RESPUESTA (JSON):
+RESPONSE FORMAT (JSON):
 {
   "questions": [
     {
-      "question": "Pregunta específica y clara basada en el contenido",
+      "question": "Specific and clear question based on content",
       "options": [
-        "Opción A - plausible y relacionada",
-        "Opción B - plausible y relacionada",
-        "Opción C - plausible y relacionada",
-        "Opción D - plausible y relacionada"
+        "Option A - plausible and related",
+        "Option B - plausible and related",
+        "Option C - plausible and related",
+        "Option D - plausible and related"
       ],
       "correctAnswer": 0,
-      "explanation": "Explicación detallada de por qué esta respuesta es correcta, haciendo referencia al contenido del tema. Opcionalmente, menciona por qué las otras opciones son incorrectas."
+      "explanation": "Detailed explanation of why this answer is correct, referencing the topic content. Optionally, mention why the other options are incorrect."
     }
   ]
 }
 
-🎯 OBJETIVO: Crear un quiz que realmente evalúe si el estudiante comprendió el tema completo.
+🎯 OBJECTIVE: Create a quiz that truly assesses whether the student understood the complete topic.
 
-✅ UN BUEN QUIZ:
-- Cubre todos los aspectos importantes del contenido
-- Tiene preguntas de diferentes niveles de dificultad
-- Las opciones incorrectas son plausibles pero claramente incorrectas
-- Las explicaciones refuerzan el aprendizaje
+✅ A GOOD QUIZ:
+- Covers all important aspects of the content
+- Has questions of different difficulty levels
+- Incorrect options are plausible but clearly wrong
+- Explanations reinforce learning
 
-❌ EVITA:
-- Preguntas triviales o demasiado obvias
-- Preguntas que se respondan por eliminación sin conocer el tema
-- Inventar información que no está en el contenido
-- Repetir la misma pregunta con diferentes palabras
+❌ AVOID:
+- Trivial or too obvious questions
+- Questions that can be answered by elimination without knowing the topic
+- Making up information that isn't in the content
+- Repeating the same question with different words
 
-Genera EXACTAMENTE $questionCount preguntas.
+Generate EXACTLY $questionCount questions.
 
-Responde SOLO con el JSON, sin texto adicional.
+Respond ONLY with JSON, no additional text.
         """.trimIndent()
     }
 
@@ -324,91 +357,75 @@ Responde SOLO con el JSON, sin texto adicional.
         endPage: Int
     ): String {
         // Calcular número de temas basado en el número de páginas
-        // Con chunks de 25 páginas, esperamos aproximadamente 5-8 temas
         val pageCount = endPage - startPage + 1
-        val recommendedTopics = (pageCount / 3).coerceIn(5, 20) // Aproximadamente 1 tema cada 3 páginas
+        val recommendedTopics = (pageCount / 5).coerceIn(4, 12)
 
         Napier.i("Generando chunk $chunkIndex: páginas $startPage-$endPage ($pageCount páginas), ~$recommendedTopics temas esperados")
 
         return """
-Analiza el siguiente fragmento de un documento educativo (PÁGINAS $startPage-$endPage) y extrae TODO su contenido para crear una ruta de aprendizaje COMPLETA.
+Analyze the following fragment of an educational document (PAGES $startPage-$endPage) and create a HIGH-QUALITY SUMMARY in the form of topics.
 
-CONTENIDO DEL DOCUMENTO (${chunkContent.length} caracteres):
+DOCUMENT CONTENT (${chunkContent.length} characters):
 $chunkContent
 
-CONTEXTO:
-- Este es el chunk #$chunkIndex de un documento más grande
-- Contiene las páginas $startPage a $endPage (total: $pageCount páginas)
-- Tu tarea es EXTRAER TODO EL CONTENIDO, NO RESUMIRLO
+CONTEXT:
+- This is chunk #$chunkIndex of a larger document
+- Contains pages $startPage to $endPage (total: $pageCount pages)
+- Your task is to SUMMARIZE clearly, maintaining the correct sequence of concepts
 
-⚠️ REGLAS CRÍTICAS - LEE CON ATENCIÓN:
+⚠️ CRITICAL RULES - READ CAREFULLY:
 
-1. **NO RESUMAS**: Debes COPIAR y EXTRAER todo el contenido textual de cada página. NO escribas resúmenes genéricos.
+1. **QUALITY SUMMARY**: Don't copy literal text. Condense ideas, but preserve key definitions and important concepts.
 
-2. **CONTENIDO PALABRA POR PALABRA**:
-   - Copia definiciones exactas del texto
-   - Incluye TODOS los ejemplos mencionados
-   - Transcribe explicaciones completas
-   - Preserva nombres propios, fechas, lugares, números, fórmulas
-   - Mantén citas y referencias importantes
+2. **COHERENCE AND SEQUENCE**:
+   - Respect the logical order of the document content
+   - Connect topics from basic to advanced
 
-3. **GENERA AL MENOS $recommendedTopics TEMAS**:
-   - Divide el contenido en temas lógicos
-   - Si una sección es muy extensa, divídela en múltiples temas
-   - Cada tema debe tener MÍNIMO 500 palabras de contenido real
+3. **GENERATE ~ $recommendedTopics TOPICS**:
+   - Divide the content into logical and well-delimited topics
+   - Each topic should have a clear summary (120-220 words)
 
-4. **PARA CADA TEMA, INCLUYE**:
-   - **Título**: Específico y descriptivo
-   - **Descripción**: Qué cubre exactamente este tema (2-3 oraciones)
-   - **Content (CRÍTICO)**:
-     * Copia TEXTUALMENTE toda la información relevante de las páginas
-     * Incluye definiciones, explicaciones, ejemplos, casos de estudio
-     * Transcribe fórmulas, ecuaciones, teoremas si los hay
-     * Copia listas, enumeraciones, clasificaciones
-     * Mínimo 500 palabras por tema (idealmente 800-1200 palabras)
-   - **KeyPoints**: 6-8 puntos clave extraídos del contenido
-   - **EstimatedMinutes**: Tiempo realista de estudio (20-90 minutos)
+4. **FOR EACH TOPIC, INCLUDE**:
+   - **Title**: Specific and descriptive
+   - **Description**: What exactly this topic covers (2-3 sentences)
+   - **Content (CRITICAL)**:
+     * Deep and faithful summary of the text
+     * Include definitions, explanations, examples and relevant formulas
+     * Avoid filler; prioritize clarity and accuracy
+   - **KeyPoints**: 4-6 key points
+   - **EstimatedMinutes**: Realistic study time (15-60 minutes)
 
-5. **EXTRACCIÓN EXHAUSTIVA**:
-   - Lee TODAS las páginas del chunk
-   - NO omitas secciones o párrafos
-   - Si hay tablas, convierte el contenido a texto
-   - Si hay diagramas, describe lo que representan
-   - Captura TODA la información educativa
-
-FORMATO DE RESPUESTA (JSON):
+RESPONSE FORMAT (JSON):
 {
-  "title": "Sección: Páginas $startPage-$endPage",
-  "description": "Contenido completo extraído de las páginas $startPage a $endPage del documento",
+  "title": "Section: Pages $startPage-$endPage",
+  "description": "Structured summary of pages $startPage to $endPage of the document",
   "topics": [
     {
-      "title": "Título específico del tema",
-      "description": "Descripción del alcance del tema",
-      "content": "AQUÍ VA TODO EL CONTENIDO TEXTUAL DE LAS PÁGINAS. Copia definiciones completas, explicaciones detalladas, ejemplos específicos con todos sus detalles, casos de estudio, fórmulas, teoremas, clasificaciones, enumeraciones, y cualquier información educativa presente en el texto original. NO escribas resúmenes genéricos. COPIA el contenido real. Mínimo 500 palabras.",
+      "title": "Specific topic title",
+      "description": "Description of the topic scope",
+      "content": "Deep and structured summary of the topic, maintaining main ideas, relevant definitions and key examples.",
       "keyPoints": [
-        "Punto 1 con detalles específicos del texto",
-        "Punto 2 con información concreta",
-        "Punto 3 con datos exactos",
-        "Punto 4 con ejemplos específicos",
-        "Punto 5 con definiciones clave",
-        "Punto 6 con conceptos importantes"
+        "Point 1 with specific details from the text",
+        "Point 2 with concrete information",
+        "Point 3 with exact data",
+        "Point 4 with specific examples",
+        "Point 5 with key definitions"
       ],
       "estimatedMinutes": 45
     }
   ]
 }
 
-🎯 OBJETIVO PRINCIPAL: Tu trabajo es COPIAR y ORGANIZAR el contenido del libro en temas, NO resumirlo. El estudiante debe poder aprender TODO el material leyendo tus temas, sin necesidad de leer el PDF original.
+🎯 MAIN OBJECTIVE: Your job is to SUMMARIZE with high quality and correct sequence. The student should understand the main content without reading the complete PDF.
 
-✅ CRITERIO DE ÉXITO: Si un estudiante lee tus temas y luego toma un examen sobre estas páginas del libro, debe poder responder TODAS las preguntas porque has extraído TODA la información.
+✅ SUCCESS CRITERIA: If a student reads your topics, they understand the concepts and correct order without reading the complete PDF.
 
-❌ LO QUE NO DEBES HACER:
-- Escribir "El texto habla sobre..." → EN SU LUGAR: Copia lo que dice el texto
-- Hacer resúmenes genéricos → EN SU LUGAR: Extrae el contenido completo
-- Omitir ejemplos o detalles → EN SU LUGAR: Incluye TODO
-- Contenido corto (<500 palabras) → EN SU LUGAR: Extrae más información
+❌ WHAT YOU SHOULD NOT DO:
+- Vague summaries without concepts or definitions
+- Lose the logical sequence of content
+- Omit important examples or relevant formulas
 
-Responde SOLO con el JSON, sin texto adicional.
+Respond ONLY with JSON, no additional text.
         """.trimIndent()
     }
 

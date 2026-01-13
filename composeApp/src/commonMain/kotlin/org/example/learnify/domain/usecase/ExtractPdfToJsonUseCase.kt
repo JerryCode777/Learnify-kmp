@@ -36,6 +36,15 @@ class ExtractPdfToJsonUseCase(
 
             Napier.i("Extracción completada: ${extraction.totalPages} páginas, ${extraction.text.length} caracteres")
 
+            if (extraction.totalPages == 0 || extraction.text.isBlank()) {
+                return Result.failure(IllegalStateException("No se encontró contenido válido en el PDF"))
+            }
+
+            // Advertencia si el documento fue truncado
+            if (extraction.wasTruncated && extraction.originalTotalPages != null) {
+                Napier.w("⚠️ ADVERTENCIA: Documento truncado de ${extraction.originalTotalPages} a ${extraction.totalPages} páginas por límites de memoria")
+            }
+
             // Contar palabras totales
             val totalWords = extraction.text.split(Regex("\\s+")).size
 
@@ -56,7 +65,9 @@ class ExtractPdfToJsonUseCase(
                     totalPages = extraction.totalPages,
                     totalCharacters = extraction.text.length,
                     totalWords = totalWords,
-                    extractedAt = currentTimeMillis()
+                    extractedAt = currentTimeMillis(),
+                    wasTruncated = extraction.wasTruncated,
+                    originalTotalPages = extraction.originalTotalPages
                 )
             )
 

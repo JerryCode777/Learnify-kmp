@@ -108,6 +108,8 @@ class IosFilePicker : FilePicker {
             }
         }
     }
+
+    override val supportsDirectPicker: Boolean = true
 }
 
 actual fun getFilePicker(): FilePicker {

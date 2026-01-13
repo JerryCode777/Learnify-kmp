@@ -6,6 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import org.example.learnify.presentation.strings.LocalAppStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,6 +29,7 @@ fun QuizScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val strings = LocalAppStrings.current
 
     LaunchedEffect(topicId) {
         viewModel.generateQuiz(topicId, topicContent, questionCount = 8)
@@ -34,10 +38,10 @@ fun QuizScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Quiz: $topicTitle") },
+                title = { Text(strings.quizTitle(topicTitle)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Volver")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, strings.navigationBack)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -67,7 +71,7 @@ fun QuizScreen(
                 )
                 is QuizUiState.Error -> ErrorContent(
                     message = state.message,
-                    onRetry = { viewModel.generateQuiz(topicId, topicContent, 5) }
+                    onRetry = { viewModel.generateQuiz(topicId, topicContent, 8) }
                 )
             }
         }
@@ -78,6 +82,8 @@ fun QuizScreen(
 private fun LoadingContent(
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -88,7 +94,7 @@ private fun LoadingContent(
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Generando quiz...",
+                text = strings.quizGenerating,
                 style = MaterialTheme.typography.bodyLarge
             )
         }
@@ -103,6 +109,8 @@ private fun ActiveQuizContent(
     onNextQuestion: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -122,12 +130,12 @@ private fun ActiveQuizContent(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "Pregunta ${state.currentQuestionIndex + 1} de ${state.totalQuestions}",
+                text = strings.quizQuestionCount(state.currentQuestionIndex, state.totalQuestions),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Puntuación: ${state.score}/${state.totalQuestions}",
+                text = strings.quizScore(state.score, state.totalQuestions),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -207,7 +215,7 @@ private fun ActiveQuizContent(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = if (isCorrect) "¡Correcto!" else "Incorrecto",
+                            text = if (isCorrect) strings.quizCorrect else strings.quizIncorrect,
                             style = MaterialTheme.typography.titleMedium,
                             color = if (isCorrect)
                                 MaterialTheme.colorScheme.onTertiaryContainer
@@ -237,9 +245,9 @@ private fun ActiveQuizContent(
                 enabled = state.selectedAnswer != null,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Send, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Enviar Respuesta")
+                Text(strings.quizSubmitAnswer)
             }
         } else {
             Button(
@@ -248,14 +256,14 @@ private fun ActiveQuizContent(
             ) {
                 Text(
                     if (state.currentQuestionIndex < state.totalQuestions - 1)
-                        "Siguiente Pregunta"
+                        strings.quizNextQuestion
                     else
-                        "Ver Resultados"
+                        strings.quizViewResults
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Icon(
                     if (state.currentQuestionIndex < state.totalQuestions - 1)
-                        Icons.Default.ArrowForward
+                        Icons.AutoMirrored.Filled.ArrowForward
                     else
                         Icons.Default.EmojiEvents,
                     contentDescription = null
@@ -354,6 +362,8 @@ private fun CompletedQuizContent(
     onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -377,7 +387,7 @@ private fun CompletedQuizContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = if (state.isPassed) "¡Felicitaciones!" else "Sigue practicando",
+            text = if (state.isPassed) strings.quizCongrats else strings.quizKeepPracticing,
             style = MaterialTheme.typography.headlineLarge,
             textAlign = TextAlign.Center
         )
@@ -386,9 +396,9 @@ private fun CompletedQuizContent(
 
         Text(
             text = if (state.isPassed)
-                "Has completado el quiz exitosamente"
+                strings.quizCompletedMessage
             else
-                "No alcanzaste el puntaje mínimo",
+                strings.quizFailedMessage,
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -408,7 +418,7 @@ private fun CompletedQuizContent(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Puntuación Final",
+                    text = strings.quizFinalScore,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
@@ -466,9 +476,9 @@ private fun CompletedQuizContent(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = if (state.isPassed)
-                        "Aprobado - Necesitas 70% para aprobar"
+                        strings.quizPassedMessage
                     else
-                        "No aprobado - Necesitas al menos 70% para aprobar",
+                        strings.quizFailedMessageDetailed,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (state.isPassed)
                         MaterialTheme.colorScheme.onTertiaryContainer
@@ -487,7 +497,7 @@ private fun CompletedQuizContent(
         ) {
             Icon(Icons.Default.Check, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Continuar Aprendiendo")
+            Text(strings.quizContinueLearning)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -498,7 +508,7 @@ private fun CompletedQuizContent(
         ) {
             Icon(Icons.Default.Refresh, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Reintentar Quiz")
+            Text(strings.quizRetry)
         }
     }
 }
@@ -509,6 +519,8 @@ private fun ErrorContent(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -534,7 +546,7 @@ private fun ErrorContent(
             Button(onClick = onRetry) {
                 Icon(Icons.Default.Refresh, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Reintentar")
+                Text(strings.quizRetryShort)
             }
         }
     }

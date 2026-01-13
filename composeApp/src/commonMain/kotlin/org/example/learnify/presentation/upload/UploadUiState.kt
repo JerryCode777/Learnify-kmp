@@ -2,6 +2,7 @@ package org.example.learnify.presentation.upload
 
 import org.example.learnify.domain.model.LearningPath
 import org.example.learnify.domain.model.PdfExtractionResult
+import org.example.learnify.domain.model.Topic
 
 sealed interface UploadUiState {
     data object Idle : UploadUiState
@@ -18,8 +19,10 @@ sealed interface UploadUiState {
         val currentChunk: Int,
         val totalChunks: Int,
         val message: String,
-        val percentage: Float
+        val percentage: Float,
+        val partialTopics: List<Topic> = emptyList()
     ) : UploadUiState
+    data class Canceled(val message: String) : UploadUiState
     data class LearningPathGenerated(val learningPath: LearningPath) : UploadUiState
     data class Error(val message: String) : UploadUiState
 }

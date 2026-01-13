@@ -6,7 +6,9 @@ import kotlinx.serialization.Serializable
 data class PdfExtractionResult(
     val text: String,
     val totalPages: Int,
-    val pages: List<PageContent> = emptyList()
+    val pages: List<PageContent> = emptyList(),
+    val wasTruncated: Boolean = false,
+    val originalTotalPages: Int? = null
 )
 
 @Serializable

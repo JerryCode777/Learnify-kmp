@@ -2,6 +2,7 @@ package org.example.learnify.util
 
 import io.github.aakira.napier.Napier
 import kotlin.native.runtime.NativeRuntimeApi
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -18,6 +19,11 @@ import platform.PDFKit.PDFDocument
 import platform.darwin.NSInteger
 
 class IosPdfExtractor : PdfExtractor {
+    companion object {
+        // Aumentado para soportar libros completos (hasta 1000 páginas)
+        private const val MAX_INCREMENTAL_PAGES = 1000
+        private const val MAX_FULL_PAGES = 1000
+    }
 
     override suspend fun extractTextWithProgress(
         fileUri: String,
@@ -44,16 +50,15 @@ class IosPdfExtractor : PdfExtractor {
 
             // Cargar documento PDF
             val pdfDocument = PDFDocument(url)
-            if (pdfDocument == null) {
-                return@withContext Result.failure(Exception("No se pudo cargar el PDF"))
-            }
-
             val totalPages = pdfDocument.pageCount.toInt()
+            if (totalPages == 0) {
+                return@withContext Result.failure(Exception("No se pudo cargar el PDF o está vacío"))
+            }
             Napier.i("PDF cargado: $totalPages páginas. Extrayendo en lotes de $batchSize páginas...")
 
             // IMPORTANTE: Limitar a un máximo de páginas para documentos muy grandes
-            val maxPagesToExtract = minOf(totalPages, 200) // Límite: primeras 200 páginas
-            if (totalPages > maxPagesToExtract) {
+            val maxPagesToExtract = minOf(totalPages, MAX_INCREMENTAL_PAGES)
+            if (totalPages > MAX_INCREMENTAL_PAGES) {
                 Napier.w("⚠️ Documento muy grande ($totalPages páginas). Limitando a las primeras $maxPagesToExtract páginas para evitar problemas de memoria.")
             }
 
@@ -116,11 +121,15 @@ class IosPdfExtractor : PdfExtractor {
 
             Napier.i("Extracción incremental completada: ${allPages.size} páginas, ${fullTextBuilder.length} caracteres")
 
+            val wasTruncated = totalPages > MAX_INCREMENTAL_PAGES
+
             Result.success(
                 PdfExtractionResult(
                     text = fullTextBuilder.toString().trim(),
                     totalPages = allPages.size,
-                    pages = allPages
+                    pages = allPages,
+                    wasTruncated = wasTruncated,
+                    originalTotalPages = if (wasTruncated) totalPages else null
                 )
             )
 
@@ -160,7 +169,8 @@ class IosPdfExtractor : PdfExtractor {
 
             // Intentar cargar el documento PDF
             val pdfDocument = PDFDocument(url)
-            if (pdfDocument == null) {
+            val totalPages = pdfDocument.pageCount.toInt()
+            if (totalPages == 0) {
                 Napier.e("No se pudo cargar el PDF desde: $cleanPath")
 
                 // Intentar leer como data para verificar si es un PDF válido
@@ -172,7 +182,7 @@ class IosPdfExtractor : PdfExtractor {
                 return@withContext Result.failure(Exception("El archivo no es un PDF válido o está corrupto."))
             }
 
-            Napier.i("PDF cargado exitosamente, ${pdfDocument.pageCount} páginas")
+            Napier.i("PDF cargado exitosamente, $totalPages páginas")
 
             val result = extractFromPdfDocument(pdfDocument)
             Napier.i("Extracción completada: ${result.totalPages} páginas, ${result.text.length} caracteres")
@@ -184,7 +194,7 @@ class IosPdfExtractor : PdfExtractor {
         }
     }
 
-    @OptIn(ExperimentalForeignApi::class)
+    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
     override suspend fun extractTextFromBytes(pdfBytes: ByteArray): Result<PdfExtractionResult> = withContext(Dispatchers.IO) {
         try {
             // Convertir ByteArray a NSData
@@ -196,7 +206,6 @@ class IosPdfExtractor : PdfExtractor {
             }
 
             val pdfDocument = PDFDocument(nsData)
-                ?: return@withContext Result.failure(Exception("No se pudo crear PDF desde bytes"))
 
             val result = extractFromPdfDocument(pdfDocument)
             Result.success(result)
@@ -215,9 +224,9 @@ class IosPdfExtractor : PdfExtractor {
         Napier.d("Extrayendo texto de $totalPages páginas...")
 
         // Limitar a un máximo de páginas para evitar problemas de memoria en iOS
-        val maxPages = minOf(totalPages, 500) // Límite de seguridad
+        val maxPages = minOf(totalPages, MAX_FULL_PAGES)
 
-        if (totalPages > maxPages) {
+        if (totalPages > MAX_FULL_PAGES) {
             Napier.w("Documento muy grande ($totalPages páginas), limitando a $maxPages páginas")
         }
 
@@ -264,10 +273,14 @@ class IosPdfExtractor : PdfExtractor {
         val totalExtracted = pages.size
         Napier.i("Extracción completada: $totalExtracted de $totalPages páginas, ${fullTextBuilder.length} caracteres totales")
 
+        val wasTruncated = totalPages > MAX_FULL_PAGES
+
         return PdfExtractionResult(
             text = fullTextBuilder.toString().trim(),
             totalPages = totalExtracted,
-            pages = pages
+            pages = pages,
+            wasTruncated = wasTruncated,
+            originalTotalPages = if (wasTruncated) totalPages else null
         )
     }
 }

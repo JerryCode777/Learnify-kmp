@@ -23,6 +23,7 @@ kotlinxDateTime = "0.6.1"
 napier = "2.7.1"
 uuid = "0.8.4"
 buildkonfig = "0.15.2"
+compottie = "2.0.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -65,6 +66,10 @@ napier = { module = "io.github.aakira:napier", version.ref = "napier" }
 
 # UUID
 uuid = { module = "com.benasher44:uuid", version.ref = "uuid" }
+
+# Lottie Animations
+compottie = { module = "io.github.alexzhirkevich:compottie", version.ref = "compottie" }
+compottie-resources = { module = "io.github.alexzhirkevich:compottie-resources", version.ref = "compottie" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

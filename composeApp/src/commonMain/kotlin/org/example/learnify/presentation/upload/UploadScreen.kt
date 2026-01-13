@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Upload
@@ -16,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.example.learnify.domain.model.PdfExtractionResult
+import org.example.learnify.domain.model.Topic
+import org.example.learnify.presentation.strings.LocalAppStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,14 +26,24 @@ fun UploadScreen(
     viewModel: UploadViewModel,
     onFilePickerRequest: () -> Unit,
     onContinue: (org.example.learnify.domain.model.LearningPath) -> Unit,
+    onNavigateBack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val strings = LocalAppStrings.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Subir Documento") },
+                title = { Text(strings.uploadTitle) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to Dashboard"
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -62,7 +75,7 @@ fun UploadScreen(
                 }
 
                 is UploadUiState.ExtractingContent -> {
-                    LoadingContent(message = "Procesando documento...")
+                    LoadingContent(message = strings.uploadProcessingMessage)
                 }
 
                 is UploadUiState.ExtractingPages -> {
@@ -82,7 +95,7 @@ fun UploadScreen(
                 }
 
                 is UploadUiState.GeneratingLearningPath -> {
-                    LoadingContent(message = "Preparando procesamiento por chunks...")
+                    LoadingContent(message = strings.uploadProcessingMessage)
                 }
 
                 is UploadUiState.ProcessingChunks -> {
@@ -90,7 +103,9 @@ fun UploadScreen(
                         currentChunk = state.currentChunk,
                         totalChunks = state.totalChunks,
                         message = state.message,
-                        percentage = state.percentage
+                        percentage = state.percentage,
+                        partialTopics = state.partialTopics,
+                        onCancel = { viewModel.onCancelProcessing() }
                     )
                 }
 
@@ -99,6 +114,13 @@ fun UploadScreen(
                         learningPath = state.learningPath,
                         onContinue = { onContinue(state.learningPath) },
                         onUploadAnother = { viewModel.resetState() }
+                    )
+                }
+
+                is UploadUiState.Canceled -> {
+                    CanceledContent(
+                        message = state.message,
+                        onRetry = { viewModel.resetState() }
                     )
                 }
 
@@ -118,6 +140,8 @@ private fun IdleContent(
     onSelectFileClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -135,7 +159,7 @@ private fun IdleContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "Sube tu documento PDF",
+            text = strings.uploadHeadline,
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
@@ -143,7 +167,7 @@ private fun IdleContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Selecciona un documento PDF para crear tu ruta de aprendizaje personalizada",
+            text = strings.uploadDescription,
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -165,7 +189,7 @@ private fun IdleContent(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "Seleccionar PDF",
+                text = strings.uploadSelectPdf,
                 style = MaterialTheme.typography.titleMedium
             )
         }
@@ -177,6 +201,8 @@ private fun LoadingContent(
     message: String,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -200,7 +226,7 @@ private fun LoadingContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Por favor espera...",
+            text = strings.uploadPleaseWait,
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -215,6 +241,8 @@ private fun LearningPathGeneratedContent(
     onUploadAnother: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -232,7 +260,7 @@ private fun LearningPathGeneratedContent(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "¡Ruta de Aprendizaje Lista!",
+            text = strings.uploadLearningPathReadyTitle,
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
@@ -258,15 +286,15 @@ private fun LearningPathGeneratedContent(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "Tu ruta de aprendizaje",
+                    text = strings.uploadLearningPathCardTitle,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                InfoRow(label = "Total de temas", value = "${learningPath.topics.size}")
+                InfoRow(label = strings.uploadTotalTopicsLabel, value = "${learningPath.topics.size}")
                 Spacer(modifier = Modifier.height(8.dp))
                 val totalMinutes = learningPath.topics.sumOf { 30 } // estimado
-                InfoRow(label = "Tiempo estimado", value = "${totalMinutes} min")
+                InfoRow(label = strings.uploadEstimatedTimeLabel, value = "${totalMinutes} min")
             }
         }
 
@@ -279,7 +307,7 @@ private fun LearningPathGeneratedContent(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "Temas a aprender",
+                    text = strings.uploadTopicsToLearnTitle,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -296,7 +324,7 @@ private fun LearningPathGeneratedContent(
                 if (learningPath.topics.size > 5) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "...y ${learningPath.topics.size - 5} temas más",
+                        text = strings.uploadMoreTopicsSuffix(learningPath.topics.size - 5),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -312,7 +340,7 @@ private fun LearningPathGeneratedContent(
                 .fillMaxWidth()
                 .height(56.dp)
         ) {
-            Text("Comenzar a Aprender")
+            Text(strings.uploadStartLearning)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -323,7 +351,7 @@ private fun LearningPathGeneratedContent(
                 .fillMaxWidth()
                 .height(56.dp)
         ) {
-            Text("Subir Otro Documento")
+            Text(strings.uploadUploadAnother)
         }
     }
 }
@@ -335,6 +363,8 @@ private fun SuccessContent(
     onUploadAnother: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -352,7 +382,7 @@ private fun SuccessContent(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "¡Documento procesado!",
+            text = strings.uploadSuccessTitle,
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
@@ -368,9 +398,9 @@ private fun SuccessContent(
             Column(
                 modifier = Modifier.padding(16.dp)
             ) {
-                InfoRow(label = "Total de páginas", value = "${result.totalPages}")
+                InfoRow(label = strings.uploadTotalPagesLabel, value = "${result.totalPages}")
                 Spacer(modifier = Modifier.height(8.dp))
-                InfoRow(label = "Caracteres extraídos", value = "${result.text.length}")
+                InfoRow(label = strings.uploadCharactersLabel, value = "${result.text.length}")
             }
         }
 
@@ -383,7 +413,7 @@ private fun SuccessContent(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "Vista previa del contenido",
+                    text = strings.uploadPreviewTitle,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -404,7 +434,7 @@ private fun SuccessContent(
                 .fillMaxWidth()
                 .height(56.dp)
         ) {
-            Text("Crear Ruta de Aprendizaje")
+            Text(strings.uploadCreateLearningPath)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -415,7 +445,7 @@ private fun SuccessContent(
                 .fillMaxWidth()
                 .height(56.dp)
         ) {
-            Text("Subir Otro Documento")
+            Text(strings.uploadUploadAnother)
         }
     }
 }
@@ -426,6 +456,8 @@ private fun ErrorContent(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -441,7 +473,7 @@ private fun ErrorContent(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Error al procesar documento",
+            text = strings.uploadErrorTitle,
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center
         )
@@ -463,7 +495,7 @@ private fun ErrorContent(
                 .fillMaxWidth()
                 .height(56.dp)
         ) {
-            Text("Intentar de Nuevo")
+            Text(strings.uploadRetry)
         }
     }
 }
@@ -475,6 +507,8 @@ private fun ExtractingPagesContent(
     percentage: Float,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -503,7 +537,7 @@ private fun ExtractingPagesContent(
 
         // Título principal
         Text(
-            text = "Extrayendo Contenido",
+            text = strings.uploadExtractingTitle,
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center
         )
@@ -522,7 +556,7 @@ private fun ExtractingPagesContent(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Página $currentPage de $totalPages",
+                    text = strings.uploadExtractingPage(currentPage, totalPages),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -537,7 +571,7 @@ private fun ExtractingPagesContent(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Procesando en lotes para optimizar memoria",
+                    text = strings.uploadExtractingInfo,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
@@ -549,7 +583,7 @@ private fun ExtractingPagesContent(
 
         // Mensaje informativo
         Text(
-            text = "Estamos extrayendo el texto de tu PDF página por página. Esto puede tomar unos minutos para documentos grandes.",
+            text = strings.uploadExtractingFootnote,
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
@@ -563,8 +597,12 @@ private fun ProcessingChunksContent(
     totalChunks: Int,
     message: String,
     percentage: Float,
+    partialTopics: List<Topic>,
+    onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -593,7 +631,7 @@ private fun ProcessingChunksContent(
 
         // Título principal
         Text(
-            text = "Procesando Documento",
+            text = strings.uploadProcessingTitle,
             style = MaterialTheme.typography.headlineSmall,
             textAlign = TextAlign.Center
         )
@@ -612,7 +650,7 @@ private fun ProcessingChunksContent(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Chunk $currentChunk de $totalChunks",
+                    text = strings.uploadProcessingChunk(currentChunk, totalChunks),
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
@@ -639,11 +677,56 @@ private fun ProcessingChunksContent(
 
         // Mensaje informativo
         Text(
-            text = "Estamos analizando cada sección de tu documento con IA para crear una ruta de aprendizaje exhaustiva. Este proceso puede tomar varios minutos.",
+            text = strings.uploadProcessingFootnote,
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
+
+        if (partialTopics.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = strings.uploadPartialTopicsTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = strings.uploadPartialTopicsCount(partialTopics.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    partialTopics.take(5).forEachIndexed { index, topic ->
+                        Text(
+                            text = "${index + 1}. ${topic.title}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (index < 4 && index < partialTopics.size - 1) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                    if (partialTopics.size > 5) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = strings.uploadPartialTopicsMore(partialTopics.size - 5),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -652,11 +735,70 @@ private fun ProcessingChunksContent(
             val estimatedTimeRemaining = ((totalChunks - currentChunk) * 30) // ~30 segundos por chunk
             if (estimatedTimeRemaining > 0) {
                 Text(
-                    text = "Tiempo estimado restante: ~${estimatedTimeRemaining / 60} min",
+                    text = strings.uploadEstimatedTimeRemaining(estimatedTimeRemaining / 60),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onCancel,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(strings.uploadCancelProcessing)
+        }
+    }
+}
+
+@Composable
+private fun CanceledContent(
+    message: String,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val strings = LocalAppStrings.current
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = strings.uploadCanceledTitle,
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = strings.uploadCanceledMessage,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = onRetry,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(strings.uploadRetry)
         }
     }
 }

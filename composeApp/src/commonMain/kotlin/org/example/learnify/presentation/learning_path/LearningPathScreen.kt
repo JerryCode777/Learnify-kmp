@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.example.learnify.domain.model.LearningPath
+import org.example.learnify.presentation.strings.LocalAppStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,6 +27,7 @@ fun LearningPathScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val strings = LocalAppStrings.current
 
     LaunchedEffect(learningPath) {
         viewModel.loadLearningPath(learningPath)
@@ -43,7 +46,7 @@ fun LearningPathScreen(
                         when (val state = uiState) {
                             is LearningPathUiState.Success -> {
                                 Text(
-                                    text = "Tema ${state.currentTopicIndex + 1} de ${state.totalCount}",
+                                    text = strings.learningPathTopicIndicator(state.currentTopicIndex, state.totalCount),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -54,7 +57,7 @@ fun LearningPathScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Volver")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, strings.navigationBack)
                     }
                 },
                 actions = {
@@ -63,7 +66,7 @@ fun LearningPathScreen(
                             IconButton(
                                 onClick = { /* TODO: Mostrar lista de temas */ }
                             ) {
-                                Icon(Icons.Default.List, "Ver todos los temas")
+                                Icon(Icons.AutoMirrored.Filled.List, strings.learningPathViewAllTopics)
                             }
                         }
                         else -> {}
@@ -132,6 +135,8 @@ private fun LearningContent(
     onStartQuiz: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     val topic = state.currentTopic
     val isCompleted = topic.id in state.completedTopics
 
@@ -150,7 +155,7 @@ private fun LearningContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "${state.completedCount} de ${state.totalCount} temas completados",
+            text = strings.learningPathCompletedCount(state.completedCount, state.totalCount),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -171,7 +176,7 @@ private fun LearningContent(
             if (isCompleted) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Completado",
+                    contentDescription = strings.accessibilityCompleted,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(32.dp)
                 )
@@ -207,7 +212,7 @@ private fun LearningContent(
         ) {
             Icon(Icons.Default.Quiz, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Hacer Quiz de este Tema")
+            Text(strings.learningPathQuizButton)
         }
 
         Spacer(modifier = Modifier.height(100.dp)) // Espacio para el bottom bar
@@ -222,6 +227,8 @@ private fun NavigationBottomBar(
     onMarkComplete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+
     val isCompleted = state.currentTopic.id in state.completedTopics
 
     Surface(
@@ -243,10 +250,10 @@ private fun NavigationBottomBar(
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Anterior"
+                    contentDescription = strings.learningPathPrevious
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Anterior")
+                Text(strings.learningPathPrevious)
             }
 
             // Mark as complete button
@@ -256,11 +263,11 @@ private fun NavigationBottomBar(
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Completar")
+                    Text(strings.learningPathComplete)
                 }
             } else {
                 Text(
-                    text = "✓ Completado",
+                    text = strings.learningPathCompletedCheck,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -271,11 +278,11 @@ private fun NavigationBottomBar(
                 onClick = onNext,
                 enabled = !state.isLastTopic
             ) {
-                Text("Siguiente")
+                Text(strings.learningPathNext)
                 Spacer(modifier = Modifier.width(4.dp))
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = "Siguiente"
+                    contentDescription = strings.learningPathNext
                 )
             }
         }

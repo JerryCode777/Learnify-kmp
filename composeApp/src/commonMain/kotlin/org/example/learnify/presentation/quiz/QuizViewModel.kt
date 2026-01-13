@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.example.learnify.data.remote.GeminiApiClient
 import org.example.learnify.domain.model.Question
 import org.example.learnify.domain.model.Quiz
 import org.example.learnify.domain.usecase.GenerateQuizUseCase
@@ -46,7 +47,7 @@ class QuizViewModel(
             }.onFailure { error ->
                 Napier.e("Error generando quiz", error)
                 _uiState.value = QuizUiState.Error(
-                    error.message ?: "Error al generar el quiz"
+                    userFacingErrorMessage(error, "Error al generar el quiz")
                 )
             }
         }
@@ -122,5 +123,13 @@ class QuizViewModel(
             totalQuestions = totalQuestions,
             progress = progress
         )
+    }
+
+    private fun userFacingErrorMessage(error: Throwable, fallback: String): String {
+        return when (error) {
+            is GeminiApiClient.RateLimitException ->
+                "Límite de la API alcanzado. Espera unos minutos e inténtalo de nuevo."
+            else -> error.message ?: fallback
+        }
     }
 }

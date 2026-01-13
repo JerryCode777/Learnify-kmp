@@ -31,6 +31,8 @@ class AndroidFilePicker(private val activity: ComponentActivity) : FilePicker {
             continuation = null
         }
     }
+
+    override val supportsDirectPicker: Boolean = true
 }
 
 actual fun getFilePicker(): FilePicker {

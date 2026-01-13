@@ -1,6 +1,10 @@
 package org.example.learnify.domain.usecase
 
 import io.github.aakira.napier.Napier
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeout
 import org.example.learnify.data.remote.GeminiApiClient
 import org.example.learnify.domain.model.*
 
@@ -15,11 +19,13 @@ class ProcessDocumentInChunksUseCase(
         // Páginas por chunk - cada 15 páginas se procesa un chunk
         // Reducido de 20 a 15 para hacer requests más pequeñas y rápidas
         private const val PAGES_PER_CHUNK = 15
+        // Límite suave de caracteres por chunk para evitar payloads gigantes
+        private const val MAX_CHARS_PER_CHUNK = 120000
 
-        // Delay entre peticiones para evitar rate limiting (en milisegundos)
-        // Gemini API Free Tier: límite MUY estricto → delay de 60 segundos = 1 request/minuto
-        // CRÍTICO: La API gratuita tiene límites extremadamente bajos
-        private const val DELAY_BETWEEN_CHUNKS_MS = 60000L
+        // Reintentos por chunk ante rate limiting
+        private const val MAX_CHUNK_RETRIES = 3
+        private const val BASE_RETRY_DELAY_MS = 15000L
+        private const val MAX_RETRY_DELAY_MS = 120000L
 
         // Palabras clave para detectar páginas irrelevantes (bibliografía, índices, etc.)
         private val IRRELEVANT_PAGE_KEYWORDS = listOf(
@@ -35,7 +41,10 @@ class ProcessDocumentInChunksUseCase(
      */
     suspend operator fun invoke(
         documentJson: DocumentJson,
-        onProgress: (current: Int, total: Int, message: String) -> Unit = { _, _, _ -> }
+        onProgress: (current: Int, total: Int, message: String) -> Unit = { _, _, _ -> },
+        onChunkSuccess: (topics: List<Topic>) -> Unit = {},
+        chunkTimeoutMs: Long = 90000L,
+        pagesOverride: List<PageJson>? = null
     ): Result<LearningPath> {
         return try {
             Napier.i("Iniciando procesamiento por chunks del documento: ${documentJson.filename}")
@@ -43,10 +52,10 @@ class ProcessDocumentInChunksUseCase(
             Napier.i("Total de caracteres: ${documentJson.metadata.totalCharacters}")
 
             // Paso 1: Filtrar páginas irrelevantes (bibliografía, índices, etc.)
-            val relevantPages = filterRelevantPages(documentJson.pages)
+            val relevantPages = pagesOverride ?: filterRelevantPages(documentJson.pages)
             Napier.i("Páginas relevantes después de filtrado: ${relevantPages.size} de ${documentJson.pages.size}")
 
-            // Paso 2: Dividir en chunks de 25 páginas
+            // Paso 2: Dividir en chunks controlando páginas y tamaño de texto
             val chunks = createChunks(relevantPages)
             Napier.i("Documento dividido en ${chunks.size} chunks de ~$PAGES_PER_CHUNK páginas cada uno")
 
@@ -55,23 +64,24 @@ class ProcessDocumentInChunksUseCase(
             val failedChunks = mutableListOf<String>()
 
             chunks.forEachIndexed { index, chunk ->
-                // Agregar delay entre chunks para evitar rate limiting (excepto el primero)
-                if (index > 0) {
-                    val delaySeconds = DELAY_BETWEEN_CHUNKS_MS / 1000
-                    val waitMessage = "Esperando ${delaySeconds}s (evitar rate limit de API)..."
-                    onProgress(index, chunks.size, waitMessage)
-                    Napier.d("⏱️ $waitMessage")
-                    kotlinx.coroutines.delay(DELAY_BETWEEN_CHUNKS_MS)
-                }
+                currentCoroutineContext().ensureActive()
 
                 val progress = "Procesando chunk ${index + 1} de ${chunks.size} (págs ${chunk.startPage}-${chunk.endPage})"
                 onProgress(index + 1, chunks.size, progress)
                 Napier.i(progress)
 
-                val result = processChunk(chunk, documentJson.documentId)
+                val result = processChunkWithRetry(
+                    chunk = chunk,
+                    documentId = documentJson.documentId,
+                    onProgress = { message ->
+                        onProgress(index + 1, chunks.size, message)
+                    },
+                    chunkTimeoutMs = chunkTimeoutMs
+                )
 
                 result.onSuccess { topics ->
                     allTopics.addAll(topics)
+                    onChunkSuccess(topics)
                     Napier.i("✅ Chunk ${index + 1}: ${topics.size} temas generados exitosamente")
                 }.onFailure { error ->
                     val errorMsg = "Chunk ${index + 1} (pág ${chunk.startPage}-${chunk.endPage}): ${error.message}"
@@ -101,7 +111,12 @@ class ProcessDocumentInChunksUseCase(
                 id = generateId(),
                 documentId = documentJson.documentId,
                 title = extractTitle(documentJson),
-                description = "Ruta de aprendizaje completa generada a partir de ${documentJson.metadata.totalPages} páginas",
+                description = buildString {
+                    append("Complete learning path generated from ${documentJson.metadata.totalPages} pages")
+                    if (failedChunks.isNotEmpty()) {
+                        append(". ${failedChunks.size} section(s) were omitted due to processing errors.")
+                    }
+                },
                 topics = allTopics,
                 createdAt = currentTimeMillis()
             )
@@ -156,34 +171,51 @@ class ProcessDocumentInChunksUseCase(
     }
 
     /**
-     * Divide las páginas en chunks de 25 páginas cada uno
+     * Divide las páginas en chunks de hasta 15 páginas y con límite suave de caracteres.
      */
     private fun createChunks(pages: List<PageJson>): List<ContentChunk> {
         val chunks = mutableListOf<ContentChunk>()
+        var currentPages = mutableListOf<PageJson>()
+        var currentChars = 0
 
-        // Dividir en chunks de PAGES_PER_CHUNK páginas
-        for (i in pages.indices step PAGES_PER_CHUNK) {
-            val chunkPages = pages.subList(
-                i,
-                minOf(i + PAGES_PER_CHUNK, pages.size)
-            )
-
-            if (chunkPages.isEmpty()) continue
-
-            val totalChars = chunkPages.sumOf { it.content.length }
-
+        fun flushChunk() {
+            if (currentPages.isEmpty()) return
+            val totalChars = currentPages.sumOf { it.content.length }
             chunks.add(
                 ContentChunk(
                     chunkIndex = chunks.size,
-                    startPage = chunkPages.first().pageNumber,
-                    endPage = chunkPages.last().pageNumber,
-                    pages = chunkPages,
+                    startPage = currentPages.first().pageNumber,
+                    endPage = currentPages.last().pageNumber,
+                    pages = currentPages.toList(),
                     totalCharacters = totalChars
                 )
             )
-
-            Napier.d("Chunk ${chunks.size}: páginas ${chunkPages.first().pageNumber}-${chunkPages.last().pageNumber}, $totalChars caracteres")
+            Napier.d(
+                "Chunk ${chunks.size}: páginas ${currentPages.first().pageNumber}-${currentPages.last().pageNumber}, $totalChars caracteres"
+            )
+            currentPages = mutableListOf()
+            currentChars = 0
         }
+
+        for (page in pages) {
+            val pageChars = page.content.length
+            val wouldExceedChars = currentChars + pageChars > MAX_CHARS_PER_CHUNK
+            val wouldExceedPages = currentPages.size >= PAGES_PER_CHUNK
+
+            if (currentPages.isNotEmpty() && (wouldExceedChars || wouldExceedPages)) {
+                flushChunk()
+            }
+
+            currentPages.add(page)
+            currentChars += pageChars
+
+            // Si una sola pagina ya supera el limite, se manda sola
+            if (currentPages.size == 1 && currentChars > MAX_CHARS_PER_CHUNK) {
+                flushChunk()
+            }
+        }
+
+        flushChunk()
 
         return chunks
     }
@@ -216,6 +248,50 @@ class ProcessDocumentInChunksUseCase(
                     order = chunk.chunkIndex * 100 + index // Mantener orden global
                 )
             }
+        }
+    }
+
+    private suspend fun processChunkWithRetry(
+        chunk: ContentChunk,
+        documentId: String,
+        onProgress: (String) -> Unit,
+        chunkTimeoutMs: Long
+    ): Result<List<Topic>> {
+        var attempt = 0
+        var delayMs = BASE_RETRY_DELAY_MS
+
+        while (true) {
+            val result = try {
+                withTimeout(chunkTimeoutMs) {
+                    processChunk(chunk, documentId)
+                }
+            } catch (e: TimeoutCancellationException) {
+                Result.failure(e)
+            }
+            if (result.isSuccess) {
+                return result
+            }
+
+            val error = result.exceptionOrNull()
+            val shouldRetry = (error is GeminiApiClient.RateLimitException ||
+                error is TimeoutCancellationException) && attempt < MAX_CHUNK_RETRIES
+            if (shouldRetry) {
+                val delaySeconds = delayMs / 1000
+                val reason = if (error is TimeoutCancellationException) {
+                    "Timeout"
+                } else {
+                    "Rate limit"
+                }
+                val message = "$reason detectado. Reintentando chunk en ${delaySeconds}s (intento ${attempt + 1}/$MAX_CHUNK_RETRIES)..."
+                Napier.w(message)
+                onProgress(message)
+                kotlinx.coroutines.delay(delayMs)
+                delayMs = (delayMs * 2).coerceAtMost(MAX_RETRY_DELAY_MS)
+                attempt++
+                continue
+            }
+
+            return result
         }
     }
 
